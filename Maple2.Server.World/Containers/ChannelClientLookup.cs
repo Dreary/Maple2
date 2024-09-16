@@ -42,14 +42,14 @@ public class ChannelClientLookup : IEnumerable<(int, ChannelClient)> {
         }
     }
 
-    public (ushort gamePort, int grpcPort, int channel) FindOrCreateChannelByIp(string gameIp) {
+    public (ushort gamePort, int grpcPort, int channel) FindOrCreateChannelByIp(string gameIp, string grpcGameIp) {
         for (int i = 0; i < channels.Count; i++) {
             if (channels[i].Endpoint.Address.ToString() == gameIp && activeChannels[i] is ChannelStatus.Inactive) {
                 return ((ushort) (Target.BaseGamePort + i + 1), Target.BaseGrpcChannelPort + i + 1, i + 1);
             }
         }
 
-        return AddChannel(gameIp);
+        return AddChannel(gameIp, grpcGameIp);
     }
 
     public int FirstChannel() {
@@ -91,15 +91,27 @@ public class ChannelClientLookup : IEnumerable<(int, ChannelClient)> {
         return true;
     }
 
-    private (ushort gamePort, int grpcPort, int channel) AddChannel(string gameIp) {
+    private (ushort gamePort, int grpcPort, int channel) AddChannel(string gameIp, string grpcGameIp) {
         int channel = channels.Count + 1;
 
         int newGamePort = Target.BaseGamePort + channel;
         int newGrpcChannelPort = Target.BaseGrpcChannelPort + channel;
 
         IPAddress ipAddress = IPAddress.Parse(gameIp);
-        var gameEndpoint = new IPEndPoint(ipAddress, newGamePort);
-        var grpcUri = new Uri($"http://{ipAddress}:{newGrpcChannelPort}");
+        IPEndPoint gameEndpoint = new IPEndPoint(ipAddress, newGamePort);
+
+        Uri grpcUri;
+
+        bool isDocker = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true";
+        if (isDocker) {
+            // When running in Docker, use the provided grpcGameIp as hostnames
+            grpcUri = new Uri($"http://{grpcGameIp}:{newGrpcChannelPort}");
+        } else {
+            // Outside of Docker, parse the IP addresses normally
+            IPAddress grpcIpAddress = IPAddress.Parse(grpcGameIp);
+            grpcUri = new Uri($"http://{grpcIpAddress}:{newGrpcChannelPort}");
+        }
+
         GrpcChannel grpcChannel = GrpcChannel.ForAddress(grpcUri);
         var client = new ChannelClient(grpcChannel);
         var healthClient = new Health.HealthClient(grpcChannel);

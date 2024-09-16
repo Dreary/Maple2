@@ -1,5 +1,7 @@
 ﻿// ReSharper disable InconsistentNaming, IdentifierTypo
 
+using System.ComponentModel;
+
 namespace Maple2.Model.Enum;
 
 public enum StringCode {
@@ -2985,6 +2987,7 @@ public enum StringCode {
     s_err_ugcmap_package_should_use_in_indoor = 2984,
     s_err_ugcmap_package_not_a_valid_package_item = 2985,
     s_err_ugcmap_package_cant_use_in_others_home = 2986,
+    [Description("You must clear your home of furnishings first.")]
     s_err_ugcmap_package_clear_indoor_first = 2987,
     s_err_ugcmap_package_not_a_valid_indoor = 2988,
     s_err_ugcmap_package_not_a_indoor_for_package_item = 2989,
@@ -2992,6 +2995,7 @@ public enum StringCode {
     s_err_ugcmap_package_failed_to_consume_package_item = 2991,
     s_err_ugcmap_package_automatic_creation_is_in_progress = 2992,
     s_err_ugcmap_package_automatic_removal_is_in_progress = 2993,
+    [Description("The home's interior has been cleared of all furnishings.")]
     s_ugcmap_package_automatic_creation_completed = 2994,
     s_ugcmap_package_automatic_removal_completed = 2995,
     s_ugcmap_package_automatic_creation_suspended = 2996,

@@ -1,9 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Numerics;
 using Maple2.Model.Enum;
 using Maple2.Model.Metadata;
 using Maple2.PacketLib.Tools;
 using Maple2.Tools;
+using Maple2.Tools.Extensions;
 
 namespace Maple2.Model.Game;
 
@@ -15,6 +15,10 @@ public class Home : IByteSerializable {
 
     public byte Area { get; private set; }
     public byte Height { get; private set; }
+
+    public byte PlannerArea { get; private set; }
+    public byte PlannerHeight { get; private set; }
+    public bool IsPlanner => Indoor.PlotMode is PlotMode.DecorPlanner or PlotMode.BlueprintPlanner;
 
     public int CurrentArchitectScore { get; set; }
     public int ArchitectScore { get; set; }
@@ -30,6 +34,7 @@ public class Home : IByteSerializable {
     public long DecorationLevel { get; set; }
     public long DecorationRewardTimestamp { get; set; }
     public List<int> InteriorRewardsClaimed { get; set; }
+    public List<HomeLayout> Layouts { get; set; }
 
     private string message;
     public string Message {
@@ -51,6 +56,8 @@ public class Home : IByteSerializable {
     public long PlotExpiryTime => Outdoor?.ExpiryTime ?? (string.IsNullOrEmpty(Name) ? 0 : Indoor.ExpiryTime); // If the name is empty, the plot is not setup yet.
     public PlotState State => Outdoor?.State ?? PlotState.Open;
 
+    public bool IsHomeSetup => !string.IsNullOrEmpty(Name);
+
     public Home() {
         message = string.Empty;
         Permissions = new Dictionary<HomePermission, HomePermissionSetting>();
@@ -67,6 +74,18 @@ public class Home : IByteSerializable {
         if (Height == height) return false;
         Height = (byte) Math.Clamp(height, Constant.MinHomeHeight, Constant.MaxHomeHeight);
         return Height == height;
+    }
+
+    public bool SetPlannerArea(int area) {
+        if (PlannerArea == area) return false;
+        PlannerArea = (byte) Math.Clamp(area, Constant.MinHomeArea, Constant.MaxHomeArea);
+        return PlannerArea == area;
+    }
+
+    public bool SetPlannerHeight(int height) {
+        if (PlannerHeight == height) return false;
+        PlannerHeight = (byte) Math.Clamp(height, Constant.MinHomeHeight, Constant.MaxHomeHeight);
+        return PlannerHeight == height;
     }
 
     public bool SetBackground(HomeBackground background) {
@@ -96,6 +115,34 @@ public class Home : IByteSerializable {
         return true;
     }
 
+    public void EnterPlanner(PlotMode mode) {
+        PlannerArea = Area;
+        PlannerHeight = Height;
+        Indoor.PlotMode = mode;
+    }
+
+    public Vector3 CalculateSafePosition(List<PlotCube> plotCubes) {
+        int area = IsPlanner ? PlannerArea : Area;
+
+        // plots start at 0,0 and are built towards negative x and y
+        int dimension = -1 * (area - 1);
+
+        // find the blocks in most negative x,y direction, with the highest z value
+        int height = 0;
+        if (plotCubes.Count > 0) {
+            List<PlotCube> cubes = plotCubes.Where(cube => cube.Position.X == dimension && cube.Position.Y == dimension).ToList();
+            if (cubes.Count > 0) {
+                height = cubes.Max(cube => cube.Position.Z);
+            }
+        }
+
+        dimension *= VectorExtensions.BLOCK_SIZE;
+
+        height++; // add 1 to height to be on top of the block
+        height *= VectorExtensions.BLOCK_SIZE;
+        return new Vector3(dimension, dimension, height);
+    }
+
     public void WriteTo(IByteWriter writer) {
         writer.WriteLong(AccountId);
         writer.WriteUnicodeString(Indoor.Name);
@@ -105,7 +152,7 @@ public class Home : IByteSerializable {
         writer.WriteInt(ArchitectScore);
         writer.WriteInt(PlotMapId);
         writer.WriteInt(PlotNumber);
-        writer.WriteByte(); // (1=Removes Top-Right UI)
+        writer.Write<PlotMode>(Indoor.PlotMode);
         writer.WriteByte(Area);
         writer.WriteByte(Height);
         writer.Write<HomeBackground>(Background);
@@ -120,5 +167,37 @@ public class Home : IByteSerializable {
                 writer.Write<HomePermissionSetting>(setting);
             }
         }
+
+        writer.WriteByte((byte) Layouts.Count);
+        foreach (HomeLayout layout in Layouts) {
+            writer.WriteClass<HomeLayout>(layout);
+        }
+        writer.WriteByte(); // saved blueprints
+    }
+}
+
+public class HomeLayout : IByteSerializable {
+    public long HomeId { get; private set; }
+    public int Id { get; private set; }
+    public string Name { get; private set; }
+    public byte Area { get; private set; }
+    public byte Height { get; private set; }
+    public DateTimeOffset Timestamp { get; private set; }
+    public List<PlotCube> Cubes { get; private set; }
+
+    public HomeLayout(int layoutId, string layoutName, byte area, byte height, DateTimeOffset timestamp, List<PlotCube> cubes) {
+        Id = layoutId;
+        Name = layoutName;
+        Area = area;
+        Height = height;
+        Timestamp = timestamp;
+        Cubes = cubes;
+    }
+
+
+    public void WriteTo(IByteWriter pWriter) {
+        pWriter.WriteInt(Id);
+        pWriter.WriteUnicodeString(Name);
+        pWriter.WriteLong(Timestamp.ToUnixTimeSeconds());
     }
 }

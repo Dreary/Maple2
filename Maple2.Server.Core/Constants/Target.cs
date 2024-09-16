@@ -13,6 +13,8 @@ public static class Target {
     public static readonly IPAddress GameIp = IPAddress.Loopback;
     public static readonly ushort BaseGamePort = 20002;
 
+    public static readonly string GrpcGameIp = IPAddress.Loopback.ToString();
+
     public static readonly Uri WebUri = new("http://localhost");
 
     public static readonly IPAddress GrpcWorldIp = IPAddress.Loopback;
@@ -33,7 +35,13 @@ public static class Target {
             GameIp = gameIpAddress;
         }
 
-        if (IPAddress.TryParse(Environment.GetEnvironmentVariable("GRPC_WORLD_IP"), out IPAddress? grpcWorldIpOverride)) {
+        string? grpcGameIpEnv = Environment.GetEnvironmentVariable("GRPC_GAME_IP");
+        if (IPAddress.TryParse(grpcGameIpEnv, out IPAddress? grpcGameIpAddress)) {
+            GrpcGameIp = grpcGameIpAddress.ToString();
+        }
+
+        string? grpcWorldIpEnv = Environment.GetEnvironmentVariable("GRPC_WORLD_IP");
+        if (IPAddress.TryParse(grpcWorldIpEnv, out IPAddress? grpcWorldIpOverride)) {
             GrpcWorldIp = grpcWorldIpOverride;
         }
 
@@ -42,6 +50,15 @@ public static class Target {
         }
 
         GrpcWorldUri = new Uri($"http://{GrpcWorldIp}:{GrpcWorldPort}");
+
+        bool isDocker = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true";
+        if (isDocker) {
+            grpcWorldIpEnv ??= IPAddress.Loopback.ToString();
+            GrpcWorldUri = new Uri($"http://{grpcWorldIpEnv}:{GrpcWorldPort}");
+            if (!string.IsNullOrEmpty(grpcGameIpEnv)) {
+                GrpcGameIp = grpcGameIpEnv;
+            }
+        }
 
         string webIP = Environment.GetEnvironmentVariable("WEB_IP") ?? "localhost";
         string webPort = Environment.GetEnvironmentVariable("WEB_PORT") ?? "4000";

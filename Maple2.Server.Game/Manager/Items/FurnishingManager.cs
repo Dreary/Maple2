@@ -2,6 +2,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Maple2.Database.Storage;
 using Maple2.Model.Enum;
+using Maple2.Model.Error;
 using Maple2.Model.Game;
 using Maple2.Model.Metadata;
 using Maple2.Server.Game.Packets;
@@ -13,7 +14,7 @@ namespace Maple2.Server.Game.Manager.Items;
 
 public class FurnishingManager {
     private static long _cubeIdCounter = Constant.FurnishingBaseId;
-    private static long NextCubeId() => Interlocked.Increment(ref _cubeIdCounter);
+    public static long NextCubeId() => Interlocked.Increment(ref _cubeIdCounter);
 
     private readonly GameSession session;
 
@@ -69,6 +70,12 @@ public class FurnishingManager {
         }
     }
 
+    public Item? GetItem(int itemId) {
+        lock (session.Item) {
+            return storage.FirstOrDefault(item => item.Id == itemId);
+        }
+    }
+
     /// <summary>
     /// Places a cube of the specified item uid at the requested location.
     /// If there are no amount remaining, we still keep the entry to allow reuse of the item uid.
@@ -107,11 +114,46 @@ public class FurnishingManager {
         }
     }
 
+    public bool PurchaseCube(FurnishingShopTable.Entry furnishingShopMetadata) {
+        if (!furnishingShopMetadata.Buyable) {
+            return false;
+        }
+
+        if (furnishingShopMetadata.Price <= 0) {
+            return true;
+        }
+
+        lock (session.Item) {
+            long negAmount;
+            switch (furnishingShopMetadata.FurnishingTokenType) {
+                case FurnishingCurrencyType.Meso:
+                    negAmount = -furnishingShopMetadata.Price;
+                    if (session.Currency.CanAddMeso(negAmount) != negAmount) {
+                        session.Send(CubePacket.Error(UgcMapError.s_err_ugcmap_not_enough_meso_balance));
+                        return false;
+                    }
+
+                    session.Currency.Meso -= furnishingShopMetadata.Price;
+                    break;
+                case FurnishingCurrencyType.Meret:
+                    negAmount = -furnishingShopMetadata.Price;
+                    if (session.Currency.CanAddMeret(negAmount) != negAmount) {
+                        session.Send(CubePacket.Error(UgcMapError.s_err_ugcmap_not_enough_merat_balance));
+                        return false;
+                    }
+
+                    session.Currency.Meret -= furnishingShopMetadata.Price;
+                    break;
+            }
+        }
+
+        return true;
+    }
+
     // TODO: NOTE - This should also be called for opening a furnishing box
-    public long PurchaseCube(int id) {
+    public long AddCube(int id) {
         const int amount = 1;
         lock (session.Item) {
-
             int count = storage.Count;
             long itemUid = AddStorage(id);
             if (itemUid == 0) {
@@ -122,6 +164,23 @@ public class FurnishingManager {
             if (storage.Count != count) {
                 session.Send(FurnishingStoragePacket.Count(storage.Count));
             }
+            return itemUid;
+        }
+    }
+
+    public long AddCube(Item item) {
+        lock (session.Item) {
+            int count = storage.Count;
+            long itemUid = AddStorage(item);
+            if (itemUid == 0) {
+                return 0;
+            }
+
+            session.Send(FurnishingStoragePacket.Purchase(item.Id, item.Amount));
+            if (storage.Count != count) {
+                session.Send(FurnishingStoragePacket.Count(storage.Count));
+            }
+
             return itemUid;
         }
     }
@@ -143,32 +202,12 @@ public class FurnishingManager {
     }
 
     private long AddStorage(int itemId) {
-        const int amount = 1;
         Item? item = session.Field.ItemDrop.CreateItem(itemId);
         if (item == null) {
             return 0;
         }
 
-        Item? stored = storage.FirstOrDefault(existing => existing.Id == itemId);
-        if (stored == null) {
-            item.Group = ItemGroup.Furnishing;
-            using GameStorage.Request db = session.GameStorage.Context();
-            item = db.CreateItem(session.AccountId, item);
-            if (item == null || storage.Add(item).Count <= 0) {
-                return 0;
-            }
-
-            session.Send(FurnishingStoragePacket.Add(item));
-            return item.Uid;
-        }
-
-        if (stored.Amount + amount > item.Metadata.Property.SlotMax) {
-            return 0;
-        }
-
-        stored.Amount += amount;
-        session.Send(FurnishingStoragePacket.Update(stored.Uid, stored.Amount));
-        return stored.Uid;
+        return AddStorage(item);
     }
 
     public long AddStorage(Item? item) {
@@ -194,7 +233,13 @@ public class FurnishingManager {
             return 0;
         }
 
+        int previousAmount = stored.Amount;
         stored.Amount += amount;
+        if (previousAmount == 0) {
+            session.Send(FurnishingStoragePacket.Add(stored));
+            return stored.Uid;
+        }
+
         session.Send(FurnishingStoragePacket.Update(stored.Uid, stored.Amount));
         return stored.Uid;
     }
@@ -215,6 +260,12 @@ public class FurnishingManager {
 
         session.Send(FurnishingInventoryPacket.Remove(uid));
         return true;
+    }
+
+    public void SendStorageCount() {
+        lock (session.Item) {
+            session.Send(FurnishingStoragePacket.Count(storage.Count));
+        }
     }
 
     public void Save(GameStorage.Request db) {

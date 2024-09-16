@@ -6,12 +6,14 @@ using Maple2.Model.Common;
 using Maple2.Model.Enum;
 using Maple2.Model.Error;
 using Maple2.Model.Game;
+using Maple2.Model.Game.Ugc;
 using Maple2.Model.Metadata;
 using Maple2.PacketLib.Tools;
 using Maple2.Server.Core.Packets;
 using Maple2.Server.Game.DebugGraphics;
 using Maple2.Server.Game.Manager.Items;
 using Maple2.Server.Game.Model;
+using Maple2.Server.Game.Model.Field;
 using Maple2.Server.Game.Packets;
 using Maple2.Server.Game.Session;
 using Maple2.Server.Game.Util;
@@ -26,6 +28,7 @@ namespace Maple2.Server.Game.Manager.Field;
 public sealed partial class FieldManager : IDisposable {
     private static int _globalIdCounter = 10000000;
     private int localIdCounter = 50000000;
+    private DateTime? fieldEmptySince;
 
     #region Autofac Autowired
     // ReSharper disable MemberCanBePrivate.Global
@@ -55,7 +58,8 @@ public sealed partial class FieldManager : IDisposable {
     internal readonly FieldActor FieldActor;
     private readonly CancellationTokenSource cancel;
     private readonly Thread thread;
-    private bool initialized = false;
+    private bool initialized;
+    public bool Disposed { get; private set; }
 
     private readonly ILogger logger = Log.Logger.ForContext<FieldManager>();
 
@@ -64,6 +68,7 @@ public sealed partial class FieldManager : IDisposable {
     public int MapId => Metadata.Id;
     public readonly long OwnerId;
     public readonly int InstanceId;
+    public FieldInstance FieldInstance = FieldInstance.Default;
     public readonly AiManager Ai;
     public IFieldRenderer? DebugRenderer { get; private set; }
 
@@ -90,6 +95,10 @@ public sealed partial class FieldManager : IDisposable {
     private void Init() {
         if (initialized) {
             return;
+        }
+
+        if (ServerTableMetadata.InstanceFieldTable.Entries.TryGetValue(Metadata.Id, out InstanceFieldMetadata? instanceField)) {
+            FieldInstance = new FieldInstance(blockChangeChannel: true, instanceField.Type, instanceField.InstanceId);
         }
 
         if (ugcMetadata.Plots.Count > 0) {
@@ -171,6 +180,27 @@ public sealed partial class FieldManager : IDisposable {
             AddSkill(skill, regionSkill.Interval, regionSkill.Position, regionSkill.Rotation);
         }
 
+        foreach (BannerTable.Entry entry in TableMetadata.BannerTable.Entries) {
+            if (entry.MapId != MapId) {
+                continue;
+            }
+
+            using GameStorage.Request db = GameStorage.Context();
+
+            FieldUgcBanner ugcBanner = new(this, entry.Id, MapId, db.FindBannerSlotsByBannerId(entry.Id));
+            Banners[entry.Id] = ugcBanner;
+
+            DateTimeOffset dateTimeOffset = DateTimeOffset.UtcNow;
+
+            BannerSlot? slot = ugcBanner.Slots.FirstOrDefault(x => x.ActivateTime.Day == dateTimeOffset.Day && x.ActivateTime.Hour == dateTimeOffset.Hour);
+
+            if (slot is null || slot.Expired || slot.Active) {
+                continue;
+            }
+
+            slot.Active = true;
+        }
+
         initialized = true;
         Scheduler.Start();
         thread.Start();
@@ -225,6 +255,7 @@ public sealed partial class FieldManager : IDisposable {
         foreach (FieldMobSpawn mobSpawn in fieldMobSpawns.Values) mobSpawn.Update(FieldTick);
         foreach (FieldSkill skill in fieldSkills.Values) skill.Update(FieldTick);
         foreach (FieldPortal portal in fieldPortals.Values) portal.Update(FieldTick);
+        UpdateBanners();
 
         RoomTimer?.Update(FieldTick);
     }
@@ -442,10 +473,16 @@ public sealed partial class FieldManager : IDisposable {
     }
 
     public void Dispose() {
+        if (Disposed) {
+            return;
+        }
+
         DebugGraphicsContext.FieldRemoved(this);
         cancel.Cancel();
         cancel.Dispose();
         thread.Join();
         Navigation.Dispose();
+
+        Disposed = true;
     }
 }

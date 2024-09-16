@@ -57,6 +57,7 @@ public class TableMapper : TypeMapper<TableMetadata> {
         yield return new TableMetadata { Name = "colorpalette.xml", Table = ParseColorPaletteTable() };
         yield return new TableMetadata { Name = "meretmarketcategory.xml", Table = ParseMeretMarketCategoryTable() };
         yield return new TableMetadata { Name = "shop_beautycoupon.xml", Table = ParseShopBeautyCouponTable() };
+        yield return new TableMetadata { Name = "na/shop_*.xml", Table = ParseFurnishingShopTable() };
         yield return new TableMetadata { Name = "gacha_info.xml", Table = ParseGachaInfoTable() };
         yield return new TableMetadata { Name = "nametagsymbol.xml", Table = ParseInsigniaTable() };
         yield return new TableMetadata { Name = "exp*.xml", Table = ParseExpTable() };
@@ -69,6 +70,7 @@ public class TableMapper : TypeMapper<TableMetadata> {
         yield return new TableMetadata { Name = "fieldmission.xml", Table = ParseFieldMissionTable() };
         yield return new TableMetadata { Name = "newworldmap.xml", Table = ParseWorldMapTable() };
         yield return new TableMetadata { Name = "maplesurvivalskininfo.xml", Table = ParseSurvivalSkinTable() };
+        yield return new TableMetadata { Name = "banner.xml", Table = ParseBanner() };
 
         // Prestige
         yield return new TableMetadata { Name = "adventurelevelability.xml", Table = ParsePrestigeLevelAbilityTable() };
@@ -1203,6 +1205,20 @@ public class TableMapper : TypeMapper<TableMetadata> {
         return new GachaInfoTable(results);
     }
 
+    private FurnishingShopTable ParseFurnishingShopTable() {
+        var results = new Dictionary<int, FurnishingShopTable.Entry>();
+        foreach ((int id, ShopFurnishing? shop) in parser.ParseFurnishingShopUgcAll().Concat(parser.ParseFurnishingShopMaid())) {
+            results.Add(id, new FurnishingShopTable.Entry(
+                ItemId: shop!.id,
+                Buyable: shop.ugcHousingBuy,
+                FurnishingTokenType: (FurnishingCurrencyType) shop.ugcHousingMoneyType,
+                Price: shop.ugcHousingDefaultPrice
+            ));
+        }
+
+        return new FurnishingShopTable(results);
+    }
+
     private InsigniaTable ParseInsigniaTable() {
         var results = new Dictionary<int, InsigniaTable.Entry>();
         foreach ((int id, NameTagSymbol symbol) in parser.ParseNameTagSymbol()) {
@@ -1473,5 +1489,17 @@ public class TableMapper : TypeMapper<TableMetadata> {
         }
 
         return new SurvivalSkinInfoTable(results);
+    }
+
+    private BannerTable ParseBanner() {
+        List<BannerTable.Entry> results = [];
+        foreach ((int id, Banner banner) in parser.ParseBanner()) {
+            results.Add(new BannerTable.Entry(
+                Id: id,
+                MapId: banner.field,
+                Price: banner.price.ToList()
+                ));
+        }
+        return new BannerTable(results);
     }
 }

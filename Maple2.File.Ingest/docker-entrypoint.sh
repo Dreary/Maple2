@@ -8,6 +8,6 @@ fi
 
 export PATH="$PATH:/root/.dotnet/tools"
 
-cd /app/Maple2.Database.Seed
+cd /app/Maple2.File.Ingest
 
 dotnet run
