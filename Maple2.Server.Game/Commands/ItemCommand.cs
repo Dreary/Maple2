@@ -25,23 +25,28 @@ public class ItemCommand : Command {
         this.itemStorage = itemStorage;
 
         var id = new Argument<int>("id", "Id of item to spawn.");
-        var amount = new Option<int>(["--amount", "-a"], () => 1, "Amount of the item.");
-        var rarity = new Option<int>(["--rarity", "-r"], () => 1, "Rarity of the item.");
-        var drop = new Option<bool>(["--drop"], "Drop item instead of adding to inventory");
-        var rollMax = new Option<bool>(["--roll-max"], () => false, "Max roll stats.");
+        var amount = new Option<int>(new[] { "--amount", "-a" }, () => 1, "Amount of the item.");
+        var rarity = new Option<int>(new[] { "--rarity", "-r" }, () => 1, "Rarity of the item.");
+        var socket = new Option<int>(new[] { "--socket", "-s" }, () => 0, "Number of sockets.");
+        var drop = new Option<bool>(new[] { "--drop" }, "Drop item instead of adding to inventory");
+        var rollMax = new Option<bool>(new[] { "--roll-max" }, () => false, "Max roll stats.");
 
         AddArgument(id);
         AddOption(amount);
         AddOption(rarity);
+        AddOption(socket);
         AddOption(drop);
         AddOption(rollMax);
-        this.SetHandler<InvocationContext, int, int, int, bool, bool>(Handle, id, amount, rarity, drop, rollMax);
+        this.SetHandler<InvocationContext, int, int, int, int, bool, bool>(Handle, id, amount, rarity, socket, drop, rollMax);
     }
 
-    private void Handle(InvocationContext ctx, int itemId, int amount, int rarity, bool drop, bool rollMax) {
+    private void Handle(InvocationContext ctx, int itemId, int amount, int rarity, int socket, bool drop, bool rollMax) {
         try {
             rarity = Math.Clamp(rarity, 1, MAX_RARITY);
-            Item? item = session.Field.ItemDrop.CreateItem(itemId, rarity, rollMax: rollMax);
+            socket = Math.Clamp(socket, 0, MAX_SOCKET);
+
+            // Create the item with the specified socket count
+            Item? item = session.Field.ItemDrop.CreateItem(itemId, rarity, amount, rollMax, socket);
             if (item == null) {
                 ctx.Console.Error.WriteLine($"Invalid Item: {itemId}");
                 return;
