@@ -289,7 +289,7 @@ public class WebController : ControllerBase {
     public ByteWriter Trophy(string userName) {
         string cacheKey = $"Trophy_{userName ?? "all"}";
 
-        if (!cache.TryGetValue(cacheKey, out ByteWriter? cachedResult)) {
+        if (!cache.TryGetValue(cacheKey, out byte[]? cachedData)) {
             List<TrophyRankInfo> rankInfos = [];
             using GameStorage.Request db = gameStorage.Context();
             if (!string.IsNullOrEmpty(userName)) {
@@ -302,48 +302,58 @@ public class WebController : ControllerBase {
                 rankInfos.AddRange(infos);
             }
 
-            cachedResult = InGameRankPacket.Trophy(rankInfos);
-            cache.Set(cacheKey, cachedResult, RankingCacheDuration);
+            ByteWriter writer = InGameRankPacket.Trophy(rankInfos);
+            cachedData = writer.Buffer[..writer.Length];
+            cache.Set(cacheKey, cachedData, RankingCacheDuration);
         }
 
-        return cachedResult!;
+        var result = new ByteWriter();
+        result.WriteBytes(cachedData!);
+        return result;
     }
 
     public ByteWriter PersonalTrophy(long characterId) {
         string cacheKey = $"PersonalTrophy_{characterId}";
 
-        if (!cache.TryGetValue(cacheKey, out ByteWriter? cachedResult)) {
+        if (!cache.TryGetValue(cacheKey, out byte[]? cachedData)) {
             using GameStorage.Request db = gameStorage.Context();
             TrophyRankInfo? info = db.GetTrophyRankInfo(characterId);
-            cachedResult = InGameRankPacket.PersonalRank(GameRankingType.PersonalTrophy, info?.Rank ?? 0);
-            cache.Set(cacheKey, cachedResult, RankingCacheDuration);
+            ByteWriter writer = InGameRankPacket.PersonalRank(GameRankingType.PersonalTrophy, info?.Rank ?? 0);
+            cachedData = writer.Buffer[..writer.Length];
+            cache.Set(cacheKey, cachedData, RankingCacheDuration);
         }
 
-        return cachedResult!;
+        var result = new ByteWriter();
+        result.WriteBytes(cachedData!);
+        return result;
     }
 
     public ByteWriter GuildTrophy(string userName) {
         if (!string.IsNullOrEmpty(userName)) {
             string cacheKey = $"GuildTrophy_{userName}";
 
-            if (!cache.TryGetValue(cacheKey, out ByteWriter? cachedResult)) {
+            if (!cache.TryGetValue(cacheKey, out byte[]? cachedData)) {
                 // Search by guild name, check full rankings cache first then fall back to DB
                 IList<GuildTrophyRankInfo> rankings = GetCachedGuildTrophyRankings();
                 GuildTrophyRankInfo? cached = rankings.FirstOrDefault(r =>
                     r.Name.Equals(userName, StringComparison.OrdinalIgnoreCase));
 
+                ByteWriter writer;
                 if (cached != null) {
-                    cachedResult = InGameRankPacket.GuildTrophy(new[] { cached });
+                    writer = InGameRankPacket.GuildTrophy([cached]);
                 } else {
                     using GameStorage.Request db = gameStorage.Context();
                     GuildTrophyRankInfo? info = db.GetGuildTrophyRankInfo(userName);
-                    cachedResult = InGameRankPacket.GuildTrophy(info != null ? new[] { info } : []);
+                    writer = InGameRankPacket.GuildTrophy(info != null ? new[] { info } : []);
                 }
 
-                cache.Set(cacheKey, cachedResult, RankingCacheDuration);
+                cachedData = writer.Buffer[..writer.Length];
+                cache.Set(cacheKey, cachedData, RankingCacheDuration);
             }
 
-            return cachedResult!;
+            var result = new ByteWriter();
+            result.WriteBytes(cachedData!);
+            return result;
         }
 
         return InGameRankPacket.GuildTrophy(GetCachedGuildTrophyRankings());
@@ -352,22 +362,26 @@ public class WebController : ControllerBase {
     public ByteWriter PersonalGuildTrophy(long characterId) {
         string cacheKey = $"PersonalGuildTrophy_{characterId}";
 
-        if (!cache.TryGetValue(cacheKey, out ByteWriter? cachedResult)) {
+        if (!cache.TryGetValue(cacheKey, out byte[]? cachedData)) {
             using GameStorage.Request db = gameStorage.Context();
             long guildId = db.GetGuildIdByCharacterId(characterId);
+            ByteWriter writer;
             if (guildId == 0) {
-                cachedResult = InGameRankPacket.PersonalRank(GameRankingType.PersonalGuildTrophy, 0);
+                writer = InGameRankPacket.PersonalRank(GameRankingType.PersonalGuildTrophy, 0);
             } else {
                 // Check cached rankings for this guild's rank
                 IList<GuildTrophyRankInfo> rankings = GetCachedGuildTrophyRankings();
                 GuildTrophyRankInfo? cached = rankings.FirstOrDefault(r => r.GuildId == guildId);
-                cachedResult = InGameRankPacket.PersonalRank(GameRankingType.PersonalGuildTrophy, cached?.Rank ?? 0);
+                writer = InGameRankPacket.PersonalRank(GameRankingType.PersonalGuildTrophy, cached?.Rank ?? 0);
             }
 
-            cache.Set(cacheKey, cachedResult, RankingCacheDuration);
+            cachedData = writer.Buffer[..writer.Length];
+            cache.Set(cacheKey, cachedData, RankingCacheDuration);
         }
 
-        return cachedResult!;
+        var result = new ByteWriter();
+        result.WriteBytes(cachedData!);
+        return result;
     }
 
     private IList<GuildTrophyRankInfo> GetCachedGuildTrophyRankings() {
@@ -387,7 +401,7 @@ public class WebController : ControllerBase {
         using GameStorage.Request db = gameStorage.Context();
         IList<long> list = db.GetMentorList(accountId, characterId);
 
-        IList<PlayerInfo> players = new List<PlayerInfo>();
+        IList<PlayerInfo> players = [];
         foreach (long menteeId in list) {
             PlayerInfo? playerInfo = db.GetPlayerInfo(menteeId);
             if (playerInfo != null) {
