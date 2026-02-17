@@ -24,6 +24,8 @@ public class DungeonManager {
     private readonly GameSession session;
 
     public IDictionary<int, DungeonRecord> Records { get; set; }
+    private readonly Dictionary<int, int> pendingRaidClears = new();
+    private (int DungeonRoomId, int ClearSeconds, long[] PartyMemberIds)? pendingPartyClear;
     private IDictionary<int, DungeonEnterLimit> EnterLimits => session.Player.Value.Character.DungeonEnterLimits;
     private IDictionary<int, DungeonRankReward> RankRewards => session.Player.Value.Unlock.DungeonRankRewards;
 
@@ -46,6 +48,13 @@ public class DungeonManager {
     private void Init() {
         using GameStorage.Request db = session.GameStorage.Context();
         Records = db.GetDungeonRecords(session.CharacterId);
+
+        var rankedDungeons = session.TableMetadata.DungeonRoomTable.Entries.Values
+            .Where(m => m.BossRankingId > 0)
+            .Select(m => $"{m.Id}->BossRankingId={m.BossRankingId}")
+            .ToList();
+        logger.Debug("Dungeons with BossRankingId > 0: {Count} [{Dungeons}]",
+            rankedDungeons.Count, string.Join(", ", rankedDungeons));
 
         foreach (DungeonRoomMetadata metadata in session.TableMetadata.DungeonRoomTable.Entries.Values) {
             if (!Records.TryGetValue(metadata.Id, out DungeonRecord? record)) {
@@ -353,6 +362,19 @@ public class DungeonManager {
 
         CalculateRewards(clearTimestamp);
 
+        // Track party clear for raid leaderboards (early victory / shortest time)
+        bool isLeader = Party == null || Party.LeaderCharacterId == session.CharacterId;
+        if (Metadata.BossRankingId > 0 && Metadata.GroupType != DungeonGroupType.colosseum
+            && isLeader && UserRecord.IsDungeonSuccess) {
+            long[] partyMemberIds = Lobby.DungeonRoomRecord.UserResults.Keys.ToArray();
+            pendingPartyClear = (Metadata.Id, UserRecord.TotalSeconds, partyMemberIds);
+            logger.Debug("Party clear tracked: DungeonId={DungeonId}, BossRankingId={BossRankingId}, ClearSeconds={ClearSeconds}, Members=[{Members}]",
+                Metadata.Id, Metadata.BossRankingId, UserRecord.TotalSeconds, string.Join(", ", partyMemberIds));
+        } else if (Metadata.BossRankingId > 0) {
+            logger.Debug("Party clear NOT tracked: DungeonId={DungeonId}, IsLeader={IsLeader}, IsDungeonSuccess={IsDungeonSuccess}, GroupType={GroupType}",
+                Metadata.Id, isLeader, UserRecord.IsDungeonSuccess, Metadata.GroupType);
+        }
+
         session.Send(DungeonRewardPacket.Dungeon(UserRecord));
     }
 
@@ -488,6 +510,13 @@ public class DungeonManager {
         } else {
             record.TotalClears++;
         }
+
+        if (metadata.BossRankingId > 0 && metadata.GroupType != DungeonGroupType.colosseum) {
+            pendingRaidClears[metadata.Id] = pendingRaidClears.GetValueOrDefault(metadata.Id) + 1;
+            logger.Debug("Raid clear tracked: DungeonId={DungeonId}, BossRankingId={BossRankingId}, PendingClears={PendingClears}",
+                metadata.Id, metadata.BossRankingId, pendingRaidClears[metadata.Id]);
+        }
+
         record.CooldownTimestamp = GetCooldownTime(metadata.CooldownType, metadata.CooldownValue, clearTime);
         session.Send(DungeonRoomPacket.Update(record));
     }
@@ -616,5 +645,14 @@ public class DungeonManager {
 
     public void Save(GameStorage.Request db) {
         db.SaveDungeonRecords(session.CharacterId, Records.Values.ToArray());
+        if (pendingRaidClears.Count > 0 || pendingPartyClear.HasValue) {
+            logger.Debug("Saving raid records for character {CharacterId}: Clears=[{Clears}], PartyClear={PartyClear}",
+                session.CharacterId,
+                string.Join(", ", pendingRaidClears.Select(kv => $"{kv.Key}={kv.Value}")),
+                pendingPartyClear.HasValue ? $"DungeonId={pendingPartyClear.Value.DungeonRoomId}, ClearSeconds={pendingPartyClear.Value.ClearSeconds}" : "none");
+            db.SaveRaidRecords(session.CharacterId, pendingRaidClears, pendingPartyClear);
+            pendingRaidClears.Clear();
+            pendingPartyClear = null;
+        }
     }
 }

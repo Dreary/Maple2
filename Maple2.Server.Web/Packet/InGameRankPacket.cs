@@ -115,66 +115,74 @@ public static class InGameRankPacket {
         return pWriter;
     }
 
-    public static ByteWriter RaidClear(GameRankingType type) {
+    public static ByteWriter RaidClear(GameRankingType type, IList<RaidClearRankInfo> rankInfos) {
         var pWriter = new ByteWriter();
         pWriter.Write<GameRankingType>(type);
         pWriter.WriteInt(0);
         pWriter.WriteUnicodeStringWithLength(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-        pWriter.WriteInt(1); // count
+        pWriter.WriteInt(rankInfos.Count);
 
-        pWriter.WriteInt(1); // rank
-        pWriter.WriteLong(); // character id
-        pWriter.WriteUnicodeStringWithLength(string.Empty); // name
-        pWriter.WriteUnicodeStringWithLength(string.Empty); // profile
-        pWriter.WriteInt(); // boss ranking ID
-        pWriter.WriteInt(); // total clears
-        pWriter.WriteInt((int) JobCode.None); // job code
-        pWriter.WriteInt(); // level
+        foreach (RaidClearRankInfo info in rankInfos) {
+            pWriter.WriteInt(info.Rank);
+            pWriter.WriteLong(info.CharacterId);
+            pWriter.WriteUnicodeStringWithLength(info.Name);
+            pWriter.WriteUnicodeStringWithLength(info.Profile);
+            pWriter.WriteInt(info.BossRankingId);
+            pWriter.WriteInt(info.TotalClears);
+            pWriter.WriteInt(info.JobCode);
+            pWriter.WriteInt(info.Level);
+        }
 
         return pWriter;
     }
 
-    public static ByteWriter RaidEarlyVictory() {
+    public static ByteWriter RaidEarlyVictory(IList<RaidEarlyVictoryRankInfo> rankInfos) {
         var pWriter = new ByteWriter();
         pWriter.Write<GameRankingType>(GameRankingType.RaidEarlyVictory);
         pWriter.WriteInt(0);
         pWriter.WriteUnicodeStringWithLength(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-        pWriter.WriteInt(1); // count
+        pWriter.WriteInt(rankInfos.Count);
 
-        pWriter.WriteInt(1); // rank
-        pWriter.WriteLong(); // dungeon record id?
-        pWriter.WriteLong(); // party leader character id
-        pWriter.WriteUnicodeStringWithLength(string.Empty); // name
-        pWriter.WriteUnicodeString(string.Empty); // clear time 00:01:39
-        pWriter.WriteInt(); // boss ranking ID
-        pWriter.WriteInt(); // clear in seconds ?
-        pWriter.WriteUnicodeStringWithLength(); // clear timestamp
-        pWriter.WriteInt(1); // party member count
+        // Debugging step by step - starting with rank + dungeon record id only
+        foreach (RaidEarlyVictoryRankInfo info in rankInfos) {
+            pWriter.WriteInt(info.Rank); // rank
+            pWriter.WriteLong(info.DungeonRecordId); // dungeon record id
+            pWriter.WriteLong(info.LeaderCharacterId); // party leader character id
+            pWriter.WriteUnicodeStringWithLength(string.Empty); // BROKEN: Leader name
+            pWriter.WriteUnicodeString(string.Empty); // clear time 00:01:39
+            pWriter.WriteInt(); // boss ranking ID
+            pWriter.WriteInt(); // clear in seconds ?
+            pWriter.WriteUnicodeStringWithLength(); // clear timestamp
+            pWriter.WriteInt(1); // party member count
 
-        pWriter.WriteLong(); // account id ?
-        pWriter.WriteUnicodeStringWithLength(string.Empty); // name
-        pWriter.WriteUnicodeStringWithLength(string.Empty); // picture
-        pWriter.WriteInt(); // level
-        pWriter.Write<Job>(Job.Newbie); // job (not jobcode)
+            pWriter.WriteLong(); // account id ?
+            pWriter.WriteUnicodeStringWithLength(string.Empty); // name
+            pWriter.WriteUnicodeStringWithLength(string.Empty); // picture
+            pWriter.WriteInt(); // level
+            pWriter.Write<Job>(Job.Newbie); // job (not jobcode)
+        }
 
         return pWriter;
-
     }
 
-    public static ByteWriter RaidShortestTime() {
+    public static ByteWriter RaidShortestTime(IList<RaidShortestTimeRankInfo> rankInfos) {
         var pWriter = new ByteWriter();
         pWriter.Write<GameRankingType>(GameRankingType.RaidShortestTime);
         pWriter.WriteInt(0);
         pWriter.WriteUnicodeStringWithLength(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
-        pWriter.WriteInt(1); // count
+        pWriter.WriteInt(rankInfos.Count);
 
-        pWriter.WriteInt(1); // rank
-        pWriter.WriteLong(); // character id
-        pWriter.WriteUnicodeStringWithLength(string.Empty); // name
-        pWriter.WriteUnicodeStringWithLength(string.Empty); // profile
-        pWriter.WriteInt(); // boss ranking ID
-        pWriter.WriteInt(); // clear in seconds
-        pWriter.WriteUnicodeStringWithLength(); // clear timestamp
+        // Testing: using same per-entry structure as RaidClear to see if client renders
+        foreach (RaidShortestTimeRankInfo info in rankInfos) {
+            pWriter.WriteInt(info.Rank); // rank
+            pWriter.WriteLong(info.LeaderCharacterId); // character id
+            pWriter.WriteUnicodeStringWithLength(info.LeaderName); // name
+            pWriter.WriteUnicodeStringWithLength(info.LeaderProfile); // profile
+            pWriter.WriteInt(info.BossRankingId); // boss ranking id
+            pWriter.WriteInt(info.ClearSeconds); // placeholder: using clear seconds where TotalClears would be
+            pWriter.WriteInt(0); // placeholder: jobCode
+            pWriter.WriteInt(0); // placeholder: level
+        }
 
         return pWriter;
     }

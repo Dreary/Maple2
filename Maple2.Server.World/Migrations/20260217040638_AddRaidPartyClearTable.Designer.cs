@@ -3,6 +3,7 @@ using System;
 using Maple2.Database.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Maple2.Server.World.Migrations
 {
     [DbContext(typeof(Ms2Context))]
-    partial class Ms2ContextModelSnapshot : ModelSnapshot
+    [Migration("20260217040638_AddRaidPartyClearTable")]
+    partial class AddRaidPartyClearTable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1275,11 +1278,13 @@ namespace Maple2.Server.World.Migrations
                     b.ToTable("quest", (string)null);
                 });
 
-            modelBuilder.Entity("Maple2.Database.Model.RaidRecord", b =>
+            modelBuilder.Entity("Maple2.Database.Model.RaidPartyClear", b =>
                 {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
+                    b.Property<long>("LeaderCharacterId")
                         .HasColumnType("bigint");
+
+                    b.Property<int>("DungeonRoomId")
+                        .HasColumnType("int");
 
                     b.Property<int>("BestClearSeconds")
                         .HasColumnType("int");
@@ -1287,32 +1292,36 @@ namespace Maple2.Server.World.Migrations
                     b.Property<DateTime>("BestClearTimestamp")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<int>("DungeonRoomId")
-                        .HasColumnType("int");
-
                     b.Property<int>("FirstClearSeconds")
                         .HasColumnType("int");
 
                     b.Property<DateTime>("FirstClearTimestamp")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<DateTime>("LastClearTime")
-                        .HasColumnType("datetime(6)");
-
-                    b.Property<long>("OwnerId")
-                        .HasColumnType("bigint");
-
                     b.Property<string>("PartyMemberIds")
                         .IsRequired()
                         .HasColumnType("longtext");
 
+                    b.HasKey("LeaderCharacterId", "DungeonRoomId");
+
+                    b.ToTable("raid-party-clear", (string)null);
+                });
+
+            modelBuilder.Entity("Maple2.Database.Model.RaidRecord", b =>
+                {
+                    b.Property<long>("OwnerId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("DungeonRoomId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("LastClearTime")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<int>("TotalClears")
                         .HasColumnType("int");
 
-                    b.HasKey("Id");
-
-                    b.HasIndex("OwnerId", "DungeonRoomId")
-                        .IsUnique();
+                    b.HasKey("OwnerId", "DungeonRoomId");
 
                     b.ToTable("raid-record", (string)null);
                 });
@@ -1961,6 +1970,15 @@ namespace Maple2.Server.World.Migrations
                     b.HasOne("Maple2.Database.Model.Item", null)
                         .WithOne()
                         .HasForeignKey("Maple2.Database.Model.PetConfig", "ItemUid")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Maple2.Database.Model.RaidPartyClear", b =>
+                {
+                    b.HasOne("Maple2.Database.Model.Character", null)
+                        .WithMany()
+                        .HasForeignKey("LeaderCharacterId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

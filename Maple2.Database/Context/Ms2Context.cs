@@ -45,6 +45,7 @@ public sealed class Ms2Context(DbContextOptions options) : DbContext(options) {
     internal DbSet<WeddingHall> WeddingHall { get; set; } = null!;
     internal DbSet<Nurturing> Nurturing { get; set; } = null!;
     internal DbSet<DungeonRecord> DungeonRecord { get; set; } = null!;
+    internal DbSet<RaidRecord> RaidRecord { get; set; } = null!;
     internal DbSet<PlayerReport> PlayerReports { get; set; } = null!;
     internal DbSet<Ban> Ban { get; set; } = null!;
 
@@ -95,6 +96,7 @@ public sealed class Ms2Context(DbContextOptions options) : DbContext(options) {
         modelBuilder.Entity<PlayerReport>(PlayerReport.Configure);
 
         modelBuilder.Entity<DungeonRecord>(Maple2.Database.Model.DungeonRecord.Configure);
+        modelBuilder.Entity<RaidRecord>(Maple2.Database.Model.RaidRecord.Configure);
         modelBuilder.Entity<Ban>(Maple2.Database.Model.Ban.Configure);
     }
 }

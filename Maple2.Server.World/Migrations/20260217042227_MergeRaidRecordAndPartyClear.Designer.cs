@@ -3,6 +3,7 @@ using System;
 using Maple2.Database.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Maple2.Server.World.Migrations
 {
     [DbContext(typeof(Ms2Context))]
-    partial class Ms2ContextModelSnapshot : ModelSnapshot
+    [Migration("20260217042227_MergeRaidRecordAndPartyClear")]
+    partial class MergeRaidRecordAndPartyClear
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1277,18 +1280,17 @@ namespace Maple2.Server.World.Migrations
 
             modelBuilder.Entity("Maple2.Database.Model.RaidRecord", b =>
                 {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
+                    b.Property<long>("OwnerId")
                         .HasColumnType("bigint");
+
+                    b.Property<int>("DungeonRoomId")
+                        .HasColumnType("int");
 
                     b.Property<int>("BestClearSeconds")
                         .HasColumnType("int");
 
                     b.Property<DateTime>("BestClearTimestamp")
                         .HasColumnType("datetime(6)");
-
-                    b.Property<int>("DungeonRoomId")
-                        .HasColumnType("int");
 
                     b.Property<int>("FirstClearSeconds")
                         .HasColumnType("int");
@@ -1299,9 +1301,6 @@ namespace Maple2.Server.World.Migrations
                     b.Property<DateTime>("LastClearTime")
                         .HasColumnType("datetime(6)");
 
-                    b.Property<long>("OwnerId")
-                        .HasColumnType("bigint");
-
                     b.Property<string>("PartyMemberIds")
                         .IsRequired()
                         .HasColumnType("longtext");
@@ -1309,10 +1308,7 @@ namespace Maple2.Server.World.Migrations
                     b.Property<int>("TotalClears")
                         .HasColumnType("int");
 
-                    b.HasKey("Id");
-
-                    b.HasIndex("OwnerId", "DungeonRoomId")
-                        .IsUnique();
+                    b.HasKey("OwnerId", "DungeonRoomId");
 
                     b.ToTable("raid-record", (string)null);
                 });

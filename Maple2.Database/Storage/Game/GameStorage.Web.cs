@@ -212,6 +212,102 @@ public partial class GameStorage {
 
             return total;
         }
+        public IList<RaidClearRankInfo> GetRaidClearRankings(int bossRankingId, int[] dungeonRoomIds) {
+            if (dungeonRoomIds.Length == 0) {
+                return [];
+            }
+
+            // Sum TotalClears across matching dungeon rooms per character
+            var clearsByOwner = Context.DungeonRecord
+                .Where(r => dungeonRoomIds.Contains(r.DungeonId))
+                .GroupBy(r => r.OwnerId)
+                .Select(g => new {
+                    CharacterId = g.Key,
+                    TotalClears = g.Sum(r => r.TotalClears),
+                })
+                .Where(x => x.TotalClears > 0)
+                .OrderByDescending(x => x.TotalClears)
+                .Take(200)
+                .ToList();
+
+            if (clearsByOwner.Count == 0) {
+                return [];
+            }
+
+            var characterIds = clearsByOwner.Select(x => x.CharacterId).ToList();
+            var characters = Context.Character
+                .Where(c => characterIds.Contains(c.Id))
+                .Select(c => new {
+                    c.Id,
+                    c.Name,
+                    Profile = c.Profile.Picture,
+                    c.Job,
+                    c.Level,
+                })
+                .ToDictionary(c => c.Id);
+
+            return clearsByOwner
+                .Where(x => characters.ContainsKey(x.CharacterId))
+                .Select((x, index) => {
+                    var c = characters[x.CharacterId];
+                    return new RaidClearRankInfo(
+                        Rank: index + 1,
+                        CharacterId: x.CharacterId,
+                        Name: c.Name,
+                        Profile: c.Profile ?? string.Empty,
+                        BossRankingId: bossRankingId,
+                        TotalClears: x.TotalClears,
+                        JobCode: (int) c.Job / 10,
+                        Level: c.Level);
+                })
+                .ToList();
+        }
+
+        public RaidClearRankInfo? GetRaidClearRankInfo(long characterId, int bossRankingId, int[] dungeonRoomIds) {
+            if (dungeonRoomIds.Length == 0) {
+                return null;
+            }
+
+            // Get this character's total clears
+            int totalClears = Context.DungeonRecord
+                .Where(r => r.OwnerId == characterId && dungeonRoomIds.Contains(r.DungeonId))
+                .Sum(r => r.TotalClears);
+
+            if (totalClears <= 0) {
+                return null;
+            }
+
+            // Count how many characters have more clears (rank = count + 1)
+            int rank = Context.DungeonRecord
+                .Where(r => dungeonRoomIds.Contains(r.DungeonId))
+                .GroupBy(r => r.OwnerId)
+                .Select(g => new { TotalClears = g.Sum(r => r.TotalClears) })
+                .Count(x => x.TotalClears > totalClears) + 1;
+
+            var character = Context.Character
+                .Where(c => c.Id == characterId)
+                .Select(c => new {
+                    c.Name,
+                    Profile = c.Profile.Picture,
+                    c.Job,
+                    c.Level,
+                })
+                .FirstOrDefault();
+
+            if (character == null) {
+                return null;
+            }
+
+            return new RaidClearRankInfo(
+                Rank: rank,
+                CharacterId: characterId,
+                Name: character.Name,
+                Profile: character.Profile ?? string.Empty,
+                BossRankingId: bossRankingId,
+                TotalClears: totalClears,
+                JobCode: (int) character.Job / 10,
+                Level: character.Level);
+        }
         #endregion
 
         public IList<long> GetMentorList(long accountId, long characterId) {

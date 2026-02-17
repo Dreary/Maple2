@@ -1610,6 +1610,7 @@ public class TableMapper : TypeMapper<TableMetadata> {
                 HelperRequireClearCount: dungeon.dungeonHelperRequireClearCount,
                 DisabledFindHelper: dungeon.isDisableFindHelper,
                 RankTableId: dungeon.rankTableID,
+                BossRankingId: dungeon.BossRanking,
                 RoundId: dungeon.roundID,
                 LeaveAfterCloseReward: dungeon.isLeaveAfterCloseReward,
                 PartyMissions: dungeon.partyMissions,

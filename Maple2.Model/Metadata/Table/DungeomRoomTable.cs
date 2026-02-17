@@ -21,6 +21,7 @@ public record DungeonRoomMetadata(
     int HelperRequireClearCount,
     bool DisabledFindHelper,
     int RankTableId,
+    int BossRankingId,
     int RoundId,
     bool LeaveAfterCloseReward,
     int[] PartyMissions,

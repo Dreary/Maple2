@@ -25,12 +25,14 @@ public class WebController : ControllerBase {
 
     private readonly WebStorage webStorage;
     private readonly GameStorage gameStorage;
+    private readonly TableMetadataStorage tableMetadata;
     private readonly IMemoryCache cache;
     private static readonly TimeSpan RankingCacheDuration = TimeSpan.FromHours(1);
 
-    public WebController(WebStorage webStorage, GameStorage gameStorage, IMemoryCache cache) {
+    public WebController(WebStorage webStorage, GameStorage gameStorage, TableMetadataStorage tableMetadata, IMemoryCache cache) {
         this.webStorage = webStorage;
         this.gameStorage = gameStorage;
+        this.tableMetadata = tableMetadata;
         this.cache = cache;
     }
 
@@ -65,8 +67,15 @@ public class WebController : ControllerBase {
             GameRankingType.PersonalTrophy => PersonalTrophy(characterId),
             GameRankingType.GuildTrophy => GuildTrophy(userName),
             GameRankingType.PersonalGuildTrophy => PersonalGuildTrophy(characterId),
+            GameRankingType.RaidClear => RaidClear(userName, rankingId),
+            GameRankingType.RaidPersonalClear => PersonalRaidClear(characterId, rankingId),
+            GameRankingType.RaidEarlyVictory => RaidEarlyVictory(rankingId),
+            GameRankingType.RaidShortestTime => RaidShortestTime(rankingId),
             _ => new ByteWriter(),
         };
+
+        Log.Logger.Debug("[Response] type={Type}, ByteWriter.Length={Length}, Hex={Hex}",
+            type, pWriter.Length, BitConverter.ToString(pWriter.Buffer, 0, Math.Min(pWriter.Length, 200)));
 
         return Results.File(ZlibCompress(pWriter), "application/octet-stream");
     }
@@ -382,6 +391,115 @@ public class WebController : ControllerBase {
         var result = new ByteWriter();
         result.WriteBytes(cachedData!);
         return result;
+    }
+
+    public ByteWriter RaidClear(string userName, int rankingId) {
+        int[] dungeonRoomIds = GetDungeonRoomIdsForBossRanking(rankingId);
+        Log.Logger.Debug("[RaidClear] rankingId={RankingId} -> dungeonRoomIds=[{DungeonRoomIds}]", rankingId, string.Join(", ", dungeonRoomIds));
+
+        if (!string.IsNullOrEmpty(userName)) {
+            string cacheKey = $"RaidClear_{rankingId}_{userName}";
+
+            if (!cache.TryGetValue(cacheKey, out byte[]? cachedData)) {
+                using GameStorage.Request db = gameStorage.Context();
+                long searchCharacterId = db.GetCharacterId(userName);
+                List<RaidClearRankInfo> rankInfos = [];
+                if (searchCharacterId != default) {
+                    RaidClearRankInfo? info = db.GetRaidClearRankInfo(searchCharacterId, rankingId, dungeonRoomIds);
+                    if (info != null) {
+                        rankInfos.Add(info);
+                    }
+                }
+
+                ByteWriter writer = InGameRankPacket.RaidClear(GameRankingType.RaidClear, rankInfos);
+                cachedData = writer.Buffer[..writer.Length];
+                cache.Set(cacheKey, cachedData, RankingCacheDuration);
+            }
+
+            var result = new ByteWriter();
+            result.WriteBytes(cachedData!);
+            return result;
+        }
+
+        // Full rankings
+        string fullCacheKey = $"RaidClear_{rankingId}_all";
+
+        if (!cache.TryGetValue(fullCacheKey, out byte[]? fullCachedData)) {
+            using GameStorage.Request db = gameStorage.Context();
+            IList<RaidClearRankInfo> rankInfos = db.GetRaidClearRankings(rankingId, dungeonRoomIds);
+            Log.Logger.Debug("[RaidClear] Found {Count} rankings for rankingId={RankingId}", rankInfos.Count, rankingId);
+            foreach (RaidClearRankInfo info in rankInfos) {
+                Log.Logger.Debug("[RaidClear] Rank={Rank}, Name={Name}, TotalClears={TotalClears}", info.Rank, info.Name, info.TotalClears);
+            }
+            ByteWriter writer = InGameRankPacket.RaidClear(GameRankingType.RaidClear, rankInfos);
+            fullCachedData = writer.Buffer[..writer.Length];
+            cache.Set(fullCacheKey, fullCachedData, RankingCacheDuration);
+        }
+
+        var fullResult = new ByteWriter();
+        fullResult.WriteBytes(fullCachedData!);
+        return fullResult;
+    }
+
+    public ByteWriter PersonalRaidClear(long characterId, int rankingId) {
+        string cacheKey = $"PersonalRaidClear_{rankingId}_{characterId}";
+
+        if (!cache.TryGetValue(cacheKey, out byte[]? cachedData)) {
+            int[] dungeonRoomIds = GetDungeonRoomIdsForBossRanking(rankingId);
+            Log.Logger.Debug("[PersonalRaidClear] characterId={CharacterId}, rankingId={RankingId} -> dungeonRoomIds=[{DungeonRoomIds}]",
+                characterId, rankingId, string.Join(", ", dungeonRoomIds));
+            using GameStorage.Request db = gameStorage.Context();
+            RaidClearRankInfo? info = db.GetRaidClearRankInfo(characterId, rankingId, dungeonRoomIds);
+            Log.Logger.Debug("[PersonalRaidClear] Result: {Result}", info != null ? $"Rank={info.Rank}, TotalClears={info.TotalClears}" : "null");
+            ByteWriter writer = InGameRankPacket.PersonalRank(GameRankingType.RaidPersonalClear, info?.Rank ?? 0);
+            cachedData = writer.Buffer[..writer.Length];
+            cache.Set(cacheKey, cachedData, RankingCacheDuration);
+        }
+
+        var result = new ByteWriter();
+        result.WriteBytes(cachedData!);
+        return result;
+    }
+
+    public ByteWriter RaidEarlyVictory(int rankingId) {
+        int[] dungeonRoomIds = GetDungeonRoomIdsForBossRanking(rankingId);
+        Log.Logger.Debug("[RaidEarlyVictory] rankingId={RankingId} -> dungeonRoomIds=[{DungeonRoomIds}]",
+            rankingId, string.Join(", ", dungeonRoomIds));
+
+        // No caching during development
+        using GameStorage.Request db = gameStorage.Context();
+        IList<RaidEarlyVictoryRankInfo> rankInfos = db.GetRaidEarlyVictoryRankings(rankingId, dungeonRoomIds);
+        Log.Logger.Debug("[RaidEarlyVictory] Found {Count} rankings for rankingId={RankingId}", rankInfos.Count, rankingId);
+        foreach (RaidEarlyVictoryRankInfo info in rankInfos) {
+            Log.Logger.Debug("[RaidEarlyVictory] Rank={Rank}, Leader={LeaderName}({LeaderCharacterId}), ClearSeconds={ClearSeconds}, Members={MemberCount}",
+                info.Rank, info.LeaderName, info.LeaderCharacterId, info.ClearSeconds, info.PartyMembers.Count);
+        }
+
+        return InGameRankPacket.RaidEarlyVictory(rankInfos);
+    }
+
+    public ByteWriter RaidShortestTime(int rankingId) {
+        int[] dungeonRoomIds = GetDungeonRoomIdsForBossRanking(rankingId);
+        Log.Logger.Debug("[RaidShortestTime] rankingId={RankingId} -> dungeonRoomIds=[{DungeonRoomIds}]",
+            rankingId, string.Join(", ", dungeonRoomIds));
+
+        // No caching during development
+        using GameStorage.Request db = gameStorage.Context();
+        IList<RaidShortestTimeRankInfo> rankInfos = db.GetRaidShortestTimeRankings(rankingId, dungeonRoomIds);
+        Log.Logger.Debug("[RaidShortestTime] Found {Count} rankings for rankingId={RankingId}", rankInfos.Count, rankingId);
+        foreach (RaidShortestTimeRankInfo info in rankInfos) {
+            Log.Logger.Debug("[RaidShortestTime] Rank={Rank}, Leader={LeaderName}({LeaderCharacterId}), ClearSeconds={ClearSeconds}",
+                info.Rank, info.LeaderName, info.LeaderCharacterId, info.ClearSeconds);
+        }
+
+        return InGameRankPacket.RaidShortestTime(rankInfos);
+    }
+
+    private int[] GetDungeonRoomIdsForBossRanking(int rankingId) {
+        return tableMetadata.DungeonRoomTable.Entries.Values
+            .Where(entry => entry.BossRankingId == rankingId)
+            .Select(entry => entry.Id)
+            .ToArray();
     }
 
     private IList<GuildTrophyRankInfo> GetCachedGuildTrophyRankings() {
