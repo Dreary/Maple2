@@ -97,19 +97,20 @@ public class ItemDropManager {
         return results;
     }
 
-    // playerLevel is the player's level. MinLevel in individualDropItemTable is a player level requirement,
-    // not an NPC level requirement (e.g. Shinjo's Feather requires player level 30+).
-    public ICollection<Item> GetIndividualDropItems(GameSession session, int playerLevel, int individualDropBoxId, int index = -1, int dropGroupId = -1) {
+    // level gates which drop groups are eligible. For mob drops this is the player's character level
+    // (MinLevel in individualDropItemTable is a player requirement, not NPC level — e.g. Shinjo's Feather
+    // requires player level 30+). For other callers (e.g. housing rewards) it may be a different score.
+    public ICollection<Item> GetIndividualDropItems(GameSession session, int level, int individualDropBoxId, int index = -1, int dropGroupId = -1) {
         if (!field.ServerTableMetadata.IndividualDropItemTable.Entries.TryGetValue(individualDropBoxId, out IDictionary<int, IndividualDropItemTable.Entry>? entryDict)) {
             return new List<Item>();
         }
 
         if (index >= 0 && dropGroupId > 0) {
             if (entryDict.TryGetValue(dropGroupId, out IndividualDropItemTable.Entry? entry)) {
-                return GetAllGroups(session, playerLevel, [entry], index).ToList();
+                return GetAllGroups(session, level, [entry], index).ToList();
             }
         }
-        return GetAllGroups(session, playerLevel, entryDict.Values.ToList()).ToList();
+        return GetAllGroups(session, level, entryDict.Values.ToList()).ToList();
     }
 
     public ICollection<Item> GetIndividualDropItems(int individualDropBoxId, int rarity = -1) {
@@ -140,10 +141,10 @@ public class ItemDropManager {
         return CreateIndividualDropBoxItems(selectedItem, session.Player.Value.Character).ToList();
     }
 
-    private IEnumerable<Item> GetAllGroups(GameSession session, int playerLevel, List<IndividualDropItemTable.Entry> entry, int index = -1) {
+    private IEnumerable<Item> GetAllGroups(GameSession session, int level, List<IndividualDropItemTable.Entry> entry, int index = -1) {
         var items = new List<Item>();
         foreach (IndividualDropItemTable.Entry group in entry) {
-            if (group.MinLevel > playerLevel) {
+            if (group.MinLevel > level) {
                 continue;
             }
 
