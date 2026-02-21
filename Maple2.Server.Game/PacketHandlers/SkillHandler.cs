@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using System.Numerics;
 using Maple2.Database.Storage;
 using Maple2.Model.Enum;

@@ -1,4 +1,4 @@
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using Maple2.Model.Enum;
 using Maple2.Model.Game;
@@ -335,6 +335,9 @@ public class FieldNpc : Actor<Npc> {
             firstAttackerObjectId = caster.ObjectId;
         }
         lastAttackerObjectId = caster.ObjectId;
+        if (caster is FieldPlayer hitPlayer) {
+            DropHitLoot(hitPlayer);
+        }
     }
 
     protected override void OnDeath() {
@@ -390,16 +393,26 @@ public class FieldNpc : Actor<Npc> {
         base.ApplyDamage(caster, damage, attack);
     }
 
+    // Drop box semantics (confirmed via KMS2 video analysis):
+    // - GlobalDropBoxIds       : drops spawned on death, shared (no per-player lock unless receiverCharacterId is set).
+    // - GlobalHitDropBoxIds    : drops spawned each time the NPC is hit while alive (triggered in OnDamageReceived).
+    // - DeadGlobalDropBoxIds   : drops spawned when a player hits the NPC corpse (IsCorpse == true).
+    // - IndividualDropBoxIds   : per-player drops on death (each damage dealer gets their own).
+    // - IndividualHitDropBoxIds: per-player drops each time the NPC is hit while alive.
+    //
+    // NOTE on globalDropItemBox vs globalDropItemSet naming:
+    // NPC XML uses globalDropBoxId which references a DROP BOX (defined by dropBoxID in globalDropItemBox).
+    // Each drop box then references item GROUPs (defined by dropGroupID in globalDropItemSet).
+    // These are separate namespaces — e.g. drop BOX 4 (Doondun's death box) contains only mesos and
+    // CN-locale items, while item GROUP 4 ("boss equipment drop") is a completely different entity
+    // only reachable via drop BOX 10, which no NPC uses. Equipment drops for bosses come from
+    // IndividualDropBoxIds instead (keyed to the NPC id, e.g. individualDropBoxId="23000013" for Doondun).
     private void DropGlobalLoot(long receiverCharacterId = 0) {
         NpcMetadataDropInfo dropInfo = Value.Metadata.DropInfo;
 
         ICollection<Item> globalDrops = new List<Item>();
         foreach (int globalDropId in dropInfo.GlobalDropBoxIds) {
             globalDrops = globalDrops.Concat(Field.ItemDrop.GetGlobalDropItems(globalDropId, Value.Metadata.Basic.Level)).ToList();
-        }
-
-        foreach (int deadGlobalDropId in dropInfo.DeadGlobalDropBoxIds) {
-            globalDrops = globalDrops.Concat(Field.ItemDrop.GetGlobalDropItems(deadGlobalDropId, Value.Metadata.Basic.Level)).ToList();
         }
 
         foreach (Item item in globalDrops) {
@@ -409,22 +422,7 @@ public class FieldNpc : Actor<Npc> {
         }
     }
 
-    private void DropIndividualLoot(FieldPlayer player) {
-        NpcMetadataDropInfo dropInfo = Value.Metadata.DropInfo;
-
-        ICollection<Item> individualDrops = new List<Item>();
-        foreach (int individualDropId in dropInfo.IndividualDropBoxIds) {
-            individualDrops = individualDrops.Concat(Field.ItemDrop.GetIndividualDropItems(player.Session, Value.Metadata.Basic.Level, individualDropId)).ToList();
-        }
-
-        foreach (Item item in individualDrops) {
-            float x = Random.Shared.Next((int) Position.X - dropInfo.DropDistanceRandom, (int) Position.X + dropInfo.DropDistanceRandom);
-            float y = Random.Shared.Next((int) Position.Y - dropInfo.DropDistanceRandom, (int) Position.Y + dropInfo.DropDistanceRandom);
-            Field.DropItem(new Vector3(x, y, Position.Z), Rotation, item, owner: this, characterId: player.Value.Character.Id);
-        }
-    }
-
-    public void DropCorpseLoot(FieldPlayer player) {
+    private void DropHitLoot(FieldPlayer player) {
         NpcMetadataDropInfo dropInfo = Value.Metadata.DropInfo;
 
         ICollection<Item> globalDrops = new List<Item>();
@@ -439,12 +437,42 @@ public class FieldNpc : Actor<Npc> {
         }
 
         foreach (int individualHitDropId in dropInfo.IndividualHitDropBoxIds) {
-            ICollection<Item> individualDrops = Field.ItemDrop.GetIndividualDropItems(player.Session, Value.Metadata.Basic.Level, individualHitDropId);
+            ICollection<Item> individualDrops = Field.ItemDrop.GetIndividualDropItems(player.Session, player.Value.Character.Level, individualHitDropId);
             foreach (Item item in individualDrops) {
                 float x = Random.Shared.Next((int) Position.X - dropInfo.DropDistanceRandom, (int) Position.X + dropInfo.DropDistanceRandom);
                 float y = Random.Shared.Next((int) Position.Y - dropInfo.DropDistanceRandom, (int) Position.Y + dropInfo.DropDistanceRandom);
                 Field.DropItem(new Vector3(x, y, Position.Z), Rotation, item, owner: this, characterId: player.Value.Character.Id);
             }
+        }
+    }
+
+    private void DropIndividualLoot(FieldPlayer player) {
+        NpcMetadataDropInfo dropInfo = Value.Metadata.DropInfo;
+
+        ICollection<Item> individualDrops = new List<Item>();
+        foreach (int individualDropId in dropInfo.IndividualDropBoxIds) {
+            individualDrops = individualDrops.Concat(Field.ItemDrop.GetIndividualDropItems(player.Session, player.Value.Character.Level, individualDropId)).ToList();
+        }
+
+        foreach (Item item in individualDrops) {
+            float x = Random.Shared.Next((int) Position.X - dropInfo.DropDistanceRandom, (int) Position.X + dropInfo.DropDistanceRandom);
+            float y = Random.Shared.Next((int) Position.Y - dropInfo.DropDistanceRandom, (int) Position.Y + dropInfo.DropDistanceRandom);
+            Field.DropItem(new Vector3(x, y, Position.Z), Rotation, item, owner: this, characterId: player.Value.Character.Id);
+        }
+    }
+
+    public void DropCorpseLoot(FieldPlayer player) {
+        NpcMetadataDropInfo dropInfo = Value.Metadata.DropInfo;
+
+        ICollection<Item> globalDrops = new List<Item>();
+        foreach (int deadGlobalDropId in dropInfo.DeadGlobalDropBoxIds) {
+            globalDrops = globalDrops.Concat(Field.ItemDrop.GetGlobalDropItems(deadGlobalDropId, Value.Metadata.Basic.Level)).ToList();
+        }
+
+        foreach (Item item in globalDrops) {
+            float x = Random.Shared.Next((int) Position.X - dropInfo.DropDistanceRandom, (int) Position.X + dropInfo.DropDistanceRandom);
+            float y = Random.Shared.Next((int) Position.Y - dropInfo.DropDistanceRandom, (int) Position.Y + dropInfo.DropDistanceRandom);
+            Field.DropItem(new Vector3(x, y, Position.Z), Rotation, item, owner: this, characterId: player.Value.Character.Id);
         }
     }
 
