@@ -31,7 +31,7 @@ public class ItemDropManager {
                     continue;
                 }
 
-                // Check if player meets level requirements.
+                // Check if NPC level meets the group's level requirements.
                 if (group.MinLevel > level || (group.MaxLevel > 0 && group.MaxLevel < level)) {
                     continue;
                 }
