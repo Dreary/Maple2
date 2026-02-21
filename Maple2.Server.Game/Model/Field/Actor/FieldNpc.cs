@@ -86,6 +86,7 @@ public class FieldNpc : Actor<Npc> {
 
     public int SpawnPointId = 0;
     public bool IsCorpse { get; private set; }
+    private long lastCorpseBroadcastTick;
     public Action<FieldNpc>? WorldBossDeathCallback { get; set; }
     public long LastDamageTick { get; private set; }
     private int lastAttackerObjectId;
@@ -147,7 +148,8 @@ public class FieldNpc : Actor<Npc> {
 
     public override void Update(long tickCount) {
         if (IsDead) {
-            if (IsCorpse) {
+            if (IsCorpse && tickCount - lastCorpseBroadcastTick >= 1000) {
+                lastCorpseBroadcastTick = tickCount;
                 SequenceCounter++;
                 Field.Broadcast(NpcControlPacket.Dead(this));
             }
