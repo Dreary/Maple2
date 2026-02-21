@@ -352,6 +352,7 @@ public class FieldNpc : Actor<Npc> {
 
         if (Value.Metadata.Corpse?.HitAble == true) {
             IsCorpse = true;
+            lastCorpseBroadcastTick = Environment.TickCount64;
         }
 
         HandleDamageDealers();

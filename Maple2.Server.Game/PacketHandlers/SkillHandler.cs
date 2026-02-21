@@ -186,10 +186,8 @@ public class SkillHandler : FieldPacketHandler {
             if (targets.All(t => t.TargetId == 0) && session.Field != null) {
                 float angle = MathF.Atan2(record.Direction.Y, record.Direction.X) * (180f / MathF.PI);
                 Prism attackPrism = record.Attack.Range.GetPrism(record.Position, angle);
-                foreach (FieldNpc npc in attackPrism.Filter(session.Field.Mobs.Values, record.Attack.TargetCount)) {
-                    if (npc.IsCorpse) {
-                        record.Targets.TryAdd(npc.ObjectId, npc);
-                    }
+                foreach (FieldNpc npc in attackPrism.Filter(session.Field.Mobs.Values.Where(n => n.IsCorpse), record.Attack.TargetCount)) {
+                    record.Targets.TryAdd(npc.ObjectId, npc);
                 }
 
                 // Fallback: if no corpse found in prism, pick the nearest corpse within range (non-directional).
@@ -216,6 +214,7 @@ public class SkillHandler : FieldPacketHandler {
                 if (!record.Targets.IsEmpty) {
                     session.Player.TargetAttack(record);
                     record.Targets.Clear();
+                    session.Buffs.TriggerEvent(session.Player, session.Player, session.Player, EventConditionType.OnSkillCastEnd, skillId: record.SkillId);
                     continue;
                 }
             }
